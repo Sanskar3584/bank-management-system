@@ -805,3 +805,37 @@ DELIMITER ;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
 -- Dump completed
+
+--
+-- View `v_customer_portfolio`: one row per customer for the demo dashboard
+-- (api/static/index.html reads total_deposits, total_loan_outstanding and next_emi_due).
+-- Added after the dump above.
+--
+
+DROP VIEW IF EXISTS `v_customer_portfolio`;
+CREATE VIEW `v_customer_portfolio` AS
+SELECT c.customer_id,
+       c.full_name,
+       -- money in the customer's savings and current accounts
+       COALESCE((SELECT SUM(a.balance)
+                   FROM account_holders ah
+                   JOIN accounts a ON a.account_id = ah.account_id
+                  WHERE ah.customer_id = c.customer_id
+                    AND a.account_type IN ('SAVINGS', 'CURRENT')
+                    AND a.status <> 'CLOSED'), 0) AS total_deposits,
+       -- principal still owed: the principal part of every instalment not yet paid
+       COALESCE((SELECT SUM(ls.principal_part)
+                   FROM account_holders ah
+                   JOIN loans l          ON l.account_id = ah.account_id
+                   JOIN loan_schedule ls ON ls.loan_id = l.loan_id
+                  WHERE ah.customer_id = c.customer_id
+                    AND ls.status <> 'PAID'), 0) AS total_loan_outstanding,
+       -- earliest instalment still pending on an active loan
+       (SELECT MIN(ls.due_date)
+          FROM account_holders ah
+          JOIN loans l          ON l.account_id = ah.account_id
+          JOIN loan_schedule ls ON ls.loan_id = l.loan_id
+         WHERE ah.customer_id = c.customer_id
+           AND l.status = 'ACTIVE'
+           AND ls.status = 'PENDING') AS next_emi_due
+  FROM customers c;

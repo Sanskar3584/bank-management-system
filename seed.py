@@ -9,6 +9,7 @@ Usage:
     python seed.py --ledger 5000000  # index-study scale (uses batching)
 
 Connection via env vars: DB_HOST, DB_PORT, DB_USER, DB_PASS (defaults below).
+Every seeded customer can sign in to the demo app in api/ with DEMO_PASSWORD.
 """
 import argparse
 import os
@@ -32,6 +33,9 @@ FIRST = ["Aarav", "Vivaan", "Aditya", "Ananya", "Diya", "Ishaan", "Kavya",
 LAST = ["Sharma", "Verma", "Patel", "Reddy", "Singh", "Gupta", "Nair",
         "Iyer", "Das", "Mehta", "Joshi", "Kulkarni"]
 CITIES = ["Mumbai", "Delhi", "Bengaluru", "Pune", "Hyderabad"]
+
+# Stored the way the API's login checks it: SHA2(password, 256). Demo use only.
+DEMO_PASSWORD = "demo123"
 
 
 def rand_account_no():
@@ -66,10 +70,11 @@ def main():
         name = f"{random.choice(FIRST)} {random.choice(LAST)}"
         branch = random.choice(branches)
         cur.execute(
-            "INSERT INTO customers (branch_id, full_name, email, phone, dob, kyc_status) "
-            "VALUES (%s,%s,%s,%s,%s,'VERIFIED')",
+            "INSERT INTO customers (branch_id, full_name, email, phone, dob, kyc_status, password_hash) "
+            "VALUES (%s,%s,%s,%s,%s,'VERIFIED',SHA2(%s, 256))",
             (branch, name, f"user{i}@example.com", f"8{i:09d}",
-             f"{random.randint(1970, 2004)}-{random.randint(1,12):02d}-{random.randint(1,28):02d}"))
+             f"{random.randint(1970, 2004)}-{random.randint(1,12):02d}-{random.randint(1,28):02d}",
+             DEMO_PASSWORD))
         cust = cur.lastrowid
 
         opening = random.choice([5000, 10000, 25000, 50000, 100000])
@@ -89,6 +94,7 @@ def main():
         accounts.append(acc)
     conn.commit()
     print(f"customers + savings accounts: {len(accounts)}")
+    print(f"demo login: user0@example.com / {DEMO_PASSWORD}")
 
     # --- optional bulk ledger for the index study -------------------
     if args.ledger:

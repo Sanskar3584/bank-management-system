@@ -20,7 +20,7 @@ All the money logic lives in the database. Stored procedures move money, trigger
 | **Tables (9)** | `branches`, `customers`, `accounts`, `account_holders`, `transactions`, `audit_log`, `loans`, `loan_schedule`, `daily_branch_summary` |
 | **Procedures (6)** | `deposit`, `withdraw`, `transfer_funds`, `get_statement`, `create_loan`, `post_emi_batch` |
 | **Triggers (6)** | `trg_prevent_overdraft`, `trg_audit_balance`, `trg_flag_large_txn`, `trg_block_ledger_update`, `trg_block_ledger_delete`, `trg_loan_default` |
-| **Views (2)** | `v_account_statement`, `v_branch_summary` |
+| **Views (3)** | `v_account_statement`, `v_branch_summary`, `v_customer_portfolio` |
 
 ## Concurrency: the bug this project is about
 
@@ -81,7 +81,7 @@ $env:DB_PASS = "your-mysql-password"      # bash: export DB_PASS=your-mysql-pass
 
 # 3. Seed demo data, then run the concurrency test.
 pip install pymysql
-python seed.py                            # 5 branches, 50 customers with savings accounts
+python seed.py                            # 5 branches, 50 customers with savings accounts (password demo123)
 python test_concurrency.py                # safe mode: all four checks should pass
 python test_concurrency.py --mode naive   # shows the lost-update bug
 ```
@@ -98,13 +98,14 @@ pip install -r requirements.txt
 uvicorn main:app --reload
 ```
 
-Open http://localhost:8000. Seeded customers have no password yet, so set one first:
+Open http://localhost:8000 and sign in as `user0@example.com` with `demo123`; `seed.py` gives every seeded customer that password.
+
+The dashboard's cards (total deposits, loan principal still owed and the next EMI date) come from the `v_customer_portfolio` view. A seeded customer has no loan, so to see the loan cards fill in, give one a loan:
 
 ```sql
-UPDATE customers SET password_hash = SHA2('demo123', 256) WHERE email = 'user0@example.com';
+SET @c = (SELECT customer_id FROM customers WHERE email = 'user0@example.com');
+CALL create_loan(@c, 200000, 9.5, 24);   -- ₹2,00,000 at 9.5% a year over 24 months
 ```
-
-Then sign in as `user0@example.com` with `demo123`.
 
 ## Project layout
 
@@ -119,5 +120,4 @@ api/static/           single-page demo UI
 ## Limitations
 
 - The guarantees cover writes that go through the procedures. A direct `UPDATE` on `accounts` is still audited and overdraft-checked, but it skips the ledger.
-- The demo API stores unsalted SHA-256 password hashes and lets any signed-in user see the branch summary. A real system would use bcrypt or Argon2 and role checks.
-- The dashboard's summary cards read a `v_customer_portfolio` view that isn't in `schema.sql` yet, so they stay empty.
+- The demo API stores unsalted SHA-256 password hashes, every seeded customer shares one demo password, and any signed-in user can see the branch summary. A real system would use bcrypt or Argon2, per-user passwords and role checks.
