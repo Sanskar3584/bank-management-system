@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Core Banking Demo</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<style>
+  :root { --bg:#0f172a; --card:#1e293b; --line:#334155; --txt:#e2e8f0;
+          --dim:#94a3b8; --acc:#38bdf8; --ok:#4ade80; --bad:#f87171; }
+  * { box-sizing:border-box; margin:0; }
+  body { background:var(--bg); color:var(--txt); font-family:system-ui,Segoe UI,Arial,sans-serif; }
+  .wrap { max-width:960px; margin:0 auto; padding:24px 16px; }
+  h1 { font-size:22px; margin-bottom:4px; } h2 { font-size:17px; margin:18px 0 10px; }
+  .dim { color:var(--dim); font-size:13px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; margin-bottom:14px; }
+  .row { display:flex; gap:14px; flex-wrap:wrap; }
+  .row .card { flex:1; min-width:210px; }
+  nav { display:flex; gap:8px; margin:18px 0; flex-wrap:wrap; }
+  nav button { background:none; border:1px solid var(--line); color:var(--dim);
+               padding:8px 16px; border-radius:8px; cursor:pointer; font-size:14px; }
+  nav button.on { color:var(--txt); border-color:var(--acc); background:#0c4a6e33; }
+  input, select { background:#0f172a; border:1px solid var(--line); color:var(--txt);
+                  padding:9px 11px; border-radius:8px; font-size:14px; width:100%; margin-bottom:10px; }
+  button.go { background:var(--acc); color:#082f49; border:none; padding:10px 18px;
+              border-radius:8px; font-weight:600; cursor:pointer; font-size:14px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); }
+  th { color:var(--dim); font-weight:600; }
+  .amt { font-variant-numeric:tabular-nums; }
+  .ok { color:var(--ok); } .bad { color:var(--bad); }
+  .big { font-size:26px; font-weight:700; margin-top:6px; }
+  .msg { padding:10px 14px; border-radius:8px; margin:10px 0; font-size:14px; }
+  .msg.ok { background:#052e1633; border:1px solid #16653433; color:var(--ok); }
+  .msg.bad { background:#450a0a33; border:1px solid #7f1d1d55; color:var(--bad); }
+  .pill { font-size:11px; border:1px solid var(--line); border-radius:99px; padding:2px 9px; color:var(--dim); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect } = React;
+
+const api = async (path, opts = {}) => {
+  const token = sessionStorage.getItem("token");
+  const res = await fetch("/api" + path, {
+    ...opts,
+    headers: { "Content-Type": "application/json",
+               ...(token ? { Authorization: "Bearer " + token } : {}) },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || res.statusText);
+  return data;
+};
+const inr = (n) => Number(n).toLocaleString("en-IN", { style:"currency", currency:"INR" });
+
+function Login({ onIn }) {
+  const [email, setEmail] = useState(""); const [pw, setPw] = useState("");
+  const [err, setErr] = useState("");
+  const go = async (e) => {
+    e.preventDefault();
+    try {
+      const r = await api("/login", { method:"POST", body: JSON.stringify({ email, password: pw }) });
+      sessionStorage.setItem("token", r.token); sessionStorage.setItem("name", r.name);
+      onIn();
+    } catch (ex) { setErr(ex.message); }
+  };
+  return (
+    <div className="card" style={{maxWidth:400, margin:"80px auto"}}>
+      <h1>Core Banking Demo</h1>
+      <p className="dim">MySQL does the heavy lifting. This UI just asks nicely.</p>
+      <form onSubmit={go} style={{marginTop:16}}>
+        <input placeholder="email" value={email} onChange={e=>setEmail(e.target.value)} />
+        <input placeholder="password" type="password" value={pw} onChange={e=>setPw(e.target.value)} />
+        {err && <div className="msg bad">{err}</div>}
+        <button className="go" style={{width:"100%"}}>Sign in</button>
+      </form>
+    </div>
+  );
+}
+
+function Dashboard() {
+  const [accs, setAccs] = useState([]); const [pf, setPf] = useState({});
+  useEffect(() => { api("/accounts").then(setAccs); api("/portfolio").then(setPf); }, []);
+  return (
+    <div>
+      <div className="row">
+        <div className="card"><div className="dim">Total deposits</div>
+          <div className="big ok">{pf.total_deposits != null ? inr(pf.total_deposits) : "…"}</div></div>
+        <div className="card"><div className="dim">Loan outstanding</div>
+          <div className="big bad">{pf.total_loan_outstanding != null ? inr(pf.total_loan_outstanding) : "…"}</div></div>
+        <div className="card"><div className="dim">Next EMI due</div>
+          <div className="big">{pf.next_emi_due || "—"}</div></div>
+      </div>
+      <h2>My accounts</h2>
+      <div className="card">
+        <table><thead><tr><th>ID</th><th>Number</th><th>Type</th><th>Role</th><th>Status</th><th style={{textAlign:"right"}}>Balance</th></tr></thead>
+        <tbody>{accs.map(a =>
+          <tr key={a.account_id}>
+            <td>{a.account_id}</td><td>{a.account_no}</td>
+            <td><span className="pill">{a.account_type}</span></td>
+            <td className="dim">{a.role}</td><td className="dim">{a.status}</td>
+            <td className={"amt " + (a.balance < 0 ? "bad" : "ok")} style={{textAlign:"right"}}>{inr(a.balance)}</td>
+          </tr>)}</tbody></table>
+      </div>
+    </div>
+  );
+}
+
+function Transfer() {
+  const [accs, setAccs] = useState([]);
+  const [from, setFrom] = useState(""); const [to, setTo] = useState("");
+  const [amt, setAmt] = useState(""); const [note, setNote] = useState("");
+  const [msg, setMsg] = useState(null);
+  useEffect(() => { api("/accounts").then(a => { setAccs(a); if (a[0]) setFrom(a[0].account_id); }); }, []);
+  const go = async (e) => {
+    e.preventDefault(); setMsg(null);
+    try {
+      await api("/transfer", { method:"POST", body: JSON.stringify(
+        { from_acc:+from, to_acc:+to, amount:+amt, narration:note }) });
+      setMsg({ ok:true, t:`Transferred ${inr(amt)} — atomically, with row locks.` });
+      api("/accounts").then(setAccs);
+    } catch (ex) { setMsg({ ok:false, t: ex.message }); }
+  };
+  return (
+    <div className="card" style={{maxWidth:460}}>
+      <h2 style={{marginTop:0}}>Transfer funds</h2>
+      <form onSubmit={go}>
+        <label className="dim">From (my account)</label>
+        <select value={from} onChange={e=>setFrom(e.target.value)}>
+          {accs.filter(a=>a.account_type!=="LOAN").map(a =>
+            <option key={a.account_id} value={a.account_id}>
+              #{a.account_id} · {a.account_no} · {inr(a.balance)}</option>)}
+        </select>
+        <label className="dim">To (account id)</label>
+        <input placeholder="e.g. 2" value={to} onChange={e=>setTo(e.target.value)} />
+        <label className="dim">Amount</label>
+        <input type="number" step="0.01" min="0.01" placeholder="0.00" value={amt} onChange={e=>setAmt(e.target.value)} />
+        <label className="dim">Narration</label>
+        <input placeholder="optional" value={note} onChange={e=>setNote(e.target.value)} />
+        {msg && <div className={"msg " + (msg.ok ? "ok" : "bad")}>{msg.t}</div>}
+        <button className="go">Send via transfer_funds()</button>
+      </form>
+    </div>
+  );
+}
+
+function Statement() {
+  const [accs, setAccs] = useState([]); const [acc, setAcc] = useState("");
+  const [rows, setRows] = useState([]); const [err, setErr] = useState("");
+  useEffect(() => { api("/accounts").then(a => { setAccs(a); if (a[0]) setAcc(a[0].account_id); }); }, []);
+  useEffect(() => {
+    if (!acc) return;
+    api(`/accounts/${acc}/statement`).then(setRows).catch(e => setErr(e.message));
+  }, [acc]);
+  return (
+    <div>
+      <div className="card" style={{maxWidth:460}}>
+        <label className="dim">Account</label>
+        <select value={acc} onChange={e=>setAcc(e.target.value)}>
+          {accs.map(a => <option key={a.account_id} value={a.account_id}>
+            #{a.account_id} · {a.account_no} ({a.account_type})</option>)}
+        </select>
+      </div>
+      {err && <div className="msg bad">{err}</div>}
+      <div className="card">
+        <table><thead><tr><th>ID</th><th>Type</th><th style={{textAlign:"right"}}>Amount</th>
+          <th style={{textAlign:"right"}}>Balance after</th><th>Narration</th><th>When</th></tr></thead>
+        <tbody>{rows.map(r =>
+          <tr key={r.txn_id}>
+            <td className="dim">{r.txn_id}</td>
+            <td><span className="pill">{r.txn_type}</span></td>
+            <td className={"amt " + (["DEPOSIT","TRANSFER_IN"].includes(r.txn_type) ? "ok":"bad")}
+                style={{textAlign:"right"}}>{inr(r.amount)}</td>
+            <td className="amt" style={{textAlign:"right"}}>{inr(r.balance_after)}</td>
+            <td className="dim">{r.narration || "—"}</td>
+            <td className="dim">{(r.created_at||"").replace("T"," ").slice(0,19)}</td>
+          </tr>)}</tbody></table>
+        {rows.length === 0 && !err && <p className="dim" style={{padding:10}}>No transactions in range.</p>}
+      </div>
+    </div>
+  );
+}
+
+function Admin() {
+  const [rows, setRows] = useState([]);
+  useEffect(() => { api("/admin/summary").then(setRows); }, []);
+  return (
+    <div className="card">
+      <h2 style={{marginTop:0}}>Branch summary <span className="dim">(v_branch_summary)</span></h2>
+      <table><thead><tr><th>Branch</th><th style={{textAlign:"right"}}>Money in</th>
+        <th style={{textAlign:"right"}}>Money out</th><th style={{textAlign:"right"}}>Flagged txns</th></tr></thead>
+      <tbody>{rows.map(r =>
+        <tr key={r.branch_id}>
+          <td>{r.branch_name}</td>
+          <td className="amt ok" style={{textAlign:"right"}}>{inr(r.total_in)}</td>
+          <td className="amt bad" style={{textAlign:"right"}}>{inr(r.total_out)}</td>
+          <td className="amt" style={{textAlign:"right"}}>{r.flagged_count}</td>
+        </tr>)}</tbody></table>
+    </div>
+  );
+}
+
+function App() {
+  const [authed, setAuthed] = useState(!!sessionStorage.getItem("token"));
+  const [tab, setTab] = useState("dashboard");
+  if (!authed) return <Login onIn={() => setAuthed(true)} />;
+  const tabs = { dashboard:"Dashboard", transfer:"Transfer", statement:"Statement", admin:"Admin" };
+  return (
+    <div className="wrap">
+      <div style={{display:"flex", justifyContent:"space-between", alignItems:"baseline"}}>
+        <div><h1>Core Banking Demo</h1>
+          <span className="dim">signed in as {sessionStorage.getItem("name")}</span></div>
+        <button className="go" style={{background:"#334155", color:"var(--txt)"}}
+          onClick={() => { sessionStorage.clear(); setAuthed(false); }}>Sign out</button>
+      </div>
+      <nav>{Object.entries(tabs).map(([k, v]) =>
+        <button key={k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>{v}</button>)}
+      </nav>
+      {tab === "dashboard" && <Dashboard />}
+      {tab === "transfer" && <Transfer />}
+      {tab === "statement" && <Statement />}
+      {tab === "admin" && <Admin />}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
